@@ -6,21 +6,36 @@ import (
 	"praktikummongo/middleware"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func NewApp(db *mongo.Database) *fiber.App {
-	app := fiber.New()
+	// Modifikasi fiber.New() untuk menyertakan BodyLimit
+	app := fiber.New(fiber.Config{
+		BodyLimit: 10 * 1024 * 1024, // 10MB
+	})
+
+	// --- Middleware & Static ---
+	app.Use(cors.New())
+	app.Use(logger.New())
+
+	app.Static("/uploads", "./uploads")
 
 	// Repository
 	userRepo := repository.NewUserRepository(db)
 	alumniRepo := repository.NewAlumniRepository(db)
 	pekerjaanRepo := repository.NewPekerjaanRepository(db)
+	fileRepo := repository.NewFileRepository(db)
 
 	// Service
 	authService := service.NewAuthService(userRepo)
 	alumniService := service.NewAlumniService(alumniRepo, db)
 	pekerjaanService := service.NewPekerjaanService(pekerjaanRepo)
+
+	uploadPath := "./uploads"                                    
+	fileService := service.NewFileService(fileRepo, uploadPath)
 
 	// ------------------- ROUTE SETUP -------------------
 
@@ -51,6 +66,15 @@ func NewApp(db *mongo.Database) *fiber.App {
 	pekerjaan.Get("/trash", middleware.RoleMiddleware("admin", "user"), pekerjaanService.GetTrash)
 	pekerjaan.Put("/restore/:id", middleware.RoleMiddleware("admin", "user"), pekerjaanService.Restore)
 	pekerjaan.Delete("/hard/:id", middleware.RoleMiddleware("admin", "user"), pekerjaanService.HardDelete)
+
+	// ------------------- FILE UPLOAD ------------------- // <-- BLOK TAMBAHAN
+	files := api.Group("/files", middleware.JWTMiddleware) 
+	files.Post("/upload", fileService.UploadFile)
+	files.Get("/", fileService.GetAllFiles)
+	files.Get("/:id", fileService.GetFileByID)
+	files.Delete("/:id", fileService.DeleteFile)
+	// files.Delete("/:id", middleware.RoleMiddleware("admin"), fileService.DeleteFile)
+	// ------------------- AKHIR BLOK -------------------
 
 	return app
 }
